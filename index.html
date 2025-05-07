@@ -938,7 +938,23 @@
     </div>
   </footer>
 
+  <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.6.10/firebase-firestore-compat.js"></script>
   <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyDYXwP2DQ98OR5GQCv5Za-O5ctAeP1Y7to",
+      authDomain: "qvl1-5ea58.firebaseapp.com",
+      projectId: "qvl1-5ea58",
+      storageBucket: "qvl1-5ea58.firebasestorage.app",
+      messagingSenderId: "374416511963",
+      appId: "1:374416511963:web:2f4a735719a975f44ccdfe",
+      measurementId: "G-62B897D9JX"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const propertiesCollection = db.collection('properties');
+
     const ADMIN_PASSWORD = 'QVL';
     let editingPropertyId = null;
 
@@ -1029,14 +1045,43 @@
       }
     ];
 
-    let properties = JSON.parse(localStorage.getItem('properties')) || initialProperties;
-    let filteredProperties = [...properties];
+    let properties = [];
+    let filteredProperties = [];
 
-    function saveProperties() {
-      localStorage.setItem('properties', JSON.stringify(properties));
+    async function initializeProperties() {
+      const snapshot = await propertiesCollection.get();
+      if (snapshot.empty) {
+        for (const property of initialProperties) {
+          await propertiesCollection.doc(String(property.id)).set(property);
+        }
+      }
+      await fetchProperties();
+    }
+
+    async function fetchProperties() {
+      properties = [];
+      const snapshot = await propertiesCollection.orderBy('id', 'asc').get();
+      snapshot.forEach(doc => {
+        properties.push(doc.data());
+      });
       filteredProperties = [...properties];
       renderProperties();
       renderAdminProperties();
+    }
+
+    async function saveProperty(property) {
+      await propertiesCollection.doc(String(property.id)).set(property);
+      await fetchProperties();
+    }
+
+    async function updatePropertyInFirestore(property) {
+      await propertiesCollection.doc(String(property.id)).update(property);
+      await fetchProperties();
+    }
+
+    async function deletePropertyFromFirestore(id) {
+      await propertiesCollection.doc(String(id)).delete();
+      await fetchProperties();
     }
 
     function toggleMenu() {
@@ -1100,7 +1145,7 @@
       }
     }
 
-    function addProperty() {
+    async function addProperty() {
       const title = document.getElementById('admin-title').value;
       const location = document.getElementById('admin-location').value;
       const price = parseInt(document.getElementById('admin-price').value);
@@ -1139,71 +1184,40 @@
             reader.readAsDataURL(file);
           });
         });
-        Promise.all(promises).then(() => {
-          const newProperty = {
-            id: properties.length ? Math.max(...properties.map(p => p.id)) + 1 : 1,
-            title,
-            location,
-            price,
-            type,
-            details,
-            services,
-            images
-          };
-          properties.push(newProperty);
-          saveProperties();
-          resetAdminForm();
-          alert('Property added successfully');
-        });
-      } else {
-        if (imageFiles.length > 0) {
-          const promises = Array.from(imageFiles).map(file => {
-            return new Promise(resolve => {
-              const reader = new FileReader();
-              reader.onload = function(e) {
-                images.push(e.target.result);
-                resolve();
-              };
-              reader.readAsDataURL(file);
-            });
-          });
-          Promise.all(promises).then(() => {
-            while (images.length < 3) {
-              images.push(defaultImages[images.length % defaultImages.length]);
-            }
-            const newProperty = {
-              id: properties.length ? Math.max(...properties.map(p => p.id)) + 1 : 1,
-              title,
-              location,
-              price,
-              type,
-              details,
-              services,
-              images
+        await Promise.all(promises);
+      } else if (imageFiles.length > 0) {
+        const promises = Array.from(imageFiles).map(file => {
+          return new Promise(resolve => {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+              images.push(e.target.result);
+              resolve();
             };
-            properties.push(newProperty);
-            saveProperties();
-            resetAdminForm();
-            alert('Property added successfully');
+            reader.readAsDataURL(file);
           });
-        } else {
-          images.push(...defaultImages.slice(0, 3));
-          const newProperty = {
-            id: properties.length ? Math.max(...properties.map(p => p.id)) + 1 : 1,
-            title,
-            location,
-            price,
-            type,
-            details,
-            services,
-            images
-          };
-          properties.push(newProperty);
-          saveProperties();
-          resetAdminForm();
-          alert('Property added successfully');
+        });
+        await Promise.all(promises);
+        while (images.length < 3) {
+          images.push(defaultImages[images.length % defaultImages.length]);
         }
+      } else {
+        images.push(...defaultImages.slice(0, 3));
       }
+
+      const newProperty = {
+        id: properties.length ? Math.max(...properties.map(p => p.id)) + 1 : 1,
+        title,
+        location,
+        price,
+        type,
+        details,
+        services,
+        images
+      };
+
+      await saveProperty(newProperty);
+      resetAdminForm();
+      alert('Property added successfully');
     }
 
     function editProperty(id) {
@@ -1221,7 +1235,7 @@
       document.getElementById('update-btn').style.display = 'block';
     }
 
-    function updateProperty() {
+    async function updateProperty() {
       const property = properties.find(p => p.id === editingPropertyId);
       if (!property) return;
 
@@ -1262,26 +1276,8 @@
             reader.readAsDataURL(file);
           });
         });
-        Promise.all(promises).then(() => {
-          if (images.length < 3) {
-            const defaultImages = [
-              "https://images.unsplash.com/photo-1600585154340-be6161a56a0c",
-              "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2",
-              "https://images.unsplash.com/photo-1613490493576-7fde63acd811",
-              "https://images.unsplash.com/photo-1600047509807-ba8f99d2cdde",
-              "https://images.unsplash.com/photo-1600585153490-76fb20a32601"
-            ];
-            while (images.length < 3) {
-              images.push(defaultImages[images.length % defaultImages.length]);
-            }
-          }
-          property.images = images;
-          saveProperties();
-          resetAdminForm();
-          alert('Property updated successfully');
-        });
-      } else {
-        if (property.images.length < 3) {
+        await Promise.all(promises);
+        if (images.length < 3) {
           const defaultImages = [
             "https://images.unsplash.com/photo-1600585154340-be6161a56a0c",
             "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2",
@@ -1289,20 +1285,32 @@
             "https://images.unsplash.com/photo-1600047509807-ba8f99d2cdde",
             "https://images.unsplash.com/photo-1600585153490-76fb20a32601"
           ];
-          while (property.images.length < 3) {
-            property.images.push(defaultImages[property.images.length % defaultImages.length]);
+          while (images.length < 3) {
+            images.push(defaultImages[images.length % defaultImages.length]);
           }
         }
-        saveProperties();
-        resetAdminForm();
-        alert('Property updated successfully');
+        property.images = images;
+      } else if (property.images.length < 3) {
+        const defaultImages = [
+          "https://images.unsplash.com/photo-1600585154340-be6161a56a0c",
+          "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2",
+          "https://images.unsplash.com/photo-1613490493576-7fde63acd811",
+          "https://images.unsplash.com/photo-1600047509807-ba8f99d2cdde",
+          "https://images.unsplash.com/photo-1600585153490-76fb20a32601"
+        ];
+        while (property.images.length < 3) {
+          property.images.push(defaultImages[property.images.length % defaultImages.length]);
+        }
       }
+
+      await updatePropertyInFirestore(property);
+      resetAdminForm();
+      alert('Property updated successfully');
     }
 
-    function deleteProperty(id) {
+    async function deleteProperty(id) {
       if (confirm('Are you sure you want to delete this property?')) {
-        properties = properties.filter(p => p.id !== id);
-        saveProperties();
+        await deletePropertyFromFirestore(id);
       }
     }
 
@@ -1431,7 +1439,7 @@
       }
     });
 
-    renderProperties();
+    initializeProperties();
     showPage('home');
   </script>
 </body>
